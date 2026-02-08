@@ -157,6 +157,28 @@ function addVideoToGrid(id, save = true) {
         saveVideos();
     };
 
+    // Volume Slider
+    const sliderContainer = document.createElement('div');
+    sliderContainer.className = 'slider-container';
+    
+    const volumeSlider = document.createElement('input');
+    volumeSlider.type = 'range';
+    volumeSlider.min = 0;
+    volumeSlider.max = 100;
+    volumeSlider.value = 50;
+    volumeSlider.className = 'volume-slider';
+    volumeSlider.title = 'Volume Control';
+    
+    volumeSlider.addEventListener('input', (e) => {
+        const vol = parseInt(e.target.value);
+        if (wrapper.player && typeof wrapper.player.setVolume === 'function') {
+            wrapper.player.setVolume(vol);
+            if (vol > 0 && wrapper.player.isMuted && wrapper.player.isMuted()) wrapper.player.unMute();
+        }
+    });
+    sliderContainer.addEventListener('click', (e) => e.stopPropagation());
+    sliderContainer.appendChild(volumeSlider);
+
     const playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const playerDiv = document.createElement('div');
     playerDiv.id = playerId;
@@ -168,6 +190,7 @@ function addVideoToGrid(id, save = true) {
     wrapper.appendChild(deleteBtn);
     wrapper.appendChild(playerDiv);
     wrapper.appendChild(spinner);
+    wrapper.appendChild(sliderContainer);
     container.appendChild(wrapper);
     updateCounter();
     if (save) saveVideos();
@@ -190,6 +213,7 @@ function addVideoToGrid(id, save = true) {
         iframe.allow = "autoplay; fullscreen";
         playerDiv.replaceWith(iframe);
         spinner.style.display = 'none'; // Hide spinner as we can't track buffering
+        sliderContainer.style.display = 'none'; // Hide slider for generic URLs
         return; // Skip YouTube Player initialization
     }
 
@@ -204,6 +228,9 @@ function addVideoToGrid(id, save = true) {
                 'onReady': (event) => {
                     if (isPlaylist) {
                         event.target.setShuffle(true);
+                    }
+                    if (typeof event.target.getVolume === 'function') {
+                        volumeSlider.value = event.target.getVolume();
                     }
                 },
                 'onStateChange': (event) => {
