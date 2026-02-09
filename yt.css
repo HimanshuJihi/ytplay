@@ -29,8 +29,13 @@ input {
     box-sizing: border-box;
 }
 
-#reloadInterval {
-    width: 100px;
+select {
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    background-color: #333;
+    color: #fff;
+    cursor: pointer;
     margin-left: 10px;
 }
 
@@ -49,6 +54,12 @@ button {
     margin-left: 10px;
 }
 
+#undoBtn {
+    background-color: #6f42c1;
+    margin-left: 10px;
+    display: none;
+}
+
 #shuffleBtn {
     background-color: #28a745;
     margin-left: 10px;
@@ -61,6 +72,12 @@ button {
 
 #playAllBtn {
     background-color: #fd7e14;
+    margin-left: 10px;
+}
+
+#pauseAllBtn {
+    background-color: #ffc107;
+    color: #000;
     margin-left: 10px;
 }
 
@@ -217,23 +234,41 @@ body.light-mode .footer {
     }
 
     .controls {
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
     }
 
-    .controls > * {
-        width: 100% !important;
-        margin: 5px 0 !important;
-        max-width: none !important;
+    #videoUrl {
+        grid-column: 1 / -1;
+        width: 100%;
+        max-width: none;
+    }
+
+    .controls > button, .controls > select {
+        margin: 0 !important;
+        width: 100%;
     }
 
     .counter {
+        grid-column: 1 / -1;
         justify-content: center;
+        margin-top: 5px;
+    }
+
+    .slider-container {
+        opacity: 1;
+    }
+
+    .footer a {
+        display: inline-block;
+        padding: 5px;
     }
 }
 
 .slider-container {
     position: absolute;
-    bottom: 0;
+    bottom: 36px; /* Move slider up to avoid covering player controls */
     left: 0;
     width: 100%;
     padding: 8px 10px;
@@ -243,8 +278,6 @@ body.light-mode .footer {
     align-items: center;
     opacity: 0;
     transition: opacity 0.3s;
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
     z-index: 15;
 }
 

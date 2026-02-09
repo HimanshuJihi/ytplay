@@ -4,20 +4,12 @@ tag.src = "https://www.youtube.com/iframe_api";
 var firstScriptTag = document.getElementsByTagName('script')[0];
 firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
+let isGlobalPause = false; // Track if user intentionally paused everything
+
 // Load saved videos on startup
 document.addEventListener('DOMContentLoaded', () => {
     const saved = JSON.parse(localStorage.getItem('yt_videos') || '[]');
     saved.forEach(id => addVideoToGrid(id, false));
-
-    // Load saved reload interval
-    const savedInterval = localStorage.getItem('yt_reload_interval');
-    if (savedInterval) {
-        document.getElementById('reloadInterval').value = savedInterval;
-        const minutes = parseFloat(savedInterval);
-        if (minutes > 0) {
-            reloadTimer = setTimeout(() => location.reload(), minutes * 60 * 1000);
-        }
-    }
 
     // Load saved theme
     const savedTheme = localStorage.getItem('yt_theme');
@@ -31,6 +23,8 @@ document.getElementById('addBtn').addEventListener('click', () => {
     let url = input.value.trim();
     
     if (!url) return;
+
+    isGlobalPause = false; // Reset pause state so videos can play
 
     // Force HTTPS for generic URLs to avoid Mixed Content errors on Netlify
     if (url.startsWith('http://')) {
@@ -56,8 +50,18 @@ document.getElementById('videoUrl').addEventListener('keyup', (event) => {
     }
 });
 
+let lastDeletedVideos = [];
+
 document.getElementById('clearBtn').addEventListener('click', () => {
     const container = document.getElementById('videoContainer');
+    
+    // Save videos before clearing
+    const currentVideos = Array.from(container.children).map(wrapper => wrapper.dataset.videoId).filter(id => id);
+    if (currentVideos.length > 0) {
+        lastDeletedVideos = currentVideos;
+        document.getElementById('undoBtn').style.display = 'inline-block';
+    }
+
     Array.from(container.children).forEach(wrapper => {
         if (wrapper.cleanup) wrapper.cleanup();
     });
@@ -66,7 +70,15 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     saveVideos();
 });
 
+document.getElementById('undoBtn').addEventListener('click', () => {
+    lastDeletedVideos.forEach(id => addVideoToGrid(id, false));
+    saveVideos();
+    document.getElementById('undoBtn').style.display = 'none';
+    lastDeletedVideos = [];
+});
+
 document.getElementById('shuffleBtn').addEventListener('click', () => {
+    isGlobalPause = false;
     const container = document.getElementById('videoContainer');
     const videos = Array.from(container.children);
     
@@ -93,6 +105,7 @@ document.getElementById('muteAllBtn').addEventListener('click', () => {
 });
 
 document.getElementById('playAllBtn').addEventListener('click', () => {
+    isGlobalPause = false; // Enable auto-resume
     const container = document.getElementById('videoContainer');
     Array.from(container.children).forEach((wrapper, index) => {
         setTimeout(() => {
@@ -103,21 +116,32 @@ document.getElementById('playAllBtn').addEventListener('click', () => {
     });
 });
 
+document.getElementById('pauseAllBtn').addEventListener('click', () => {
+    isGlobalPause = true; // Disable auto-resume because user wants to pause
+    const container = document.getElementById('videoContainer');
+    Array.from(container.children).forEach(wrapper => {
+        if (wrapper.player && typeof wrapper.player.pauseVideo === 'function') {
+            wrapper.player.pauseVideo();
+        }
+    });
+});
+
 document.getElementById('themeBtn').addEventListener('click', () => {
     document.body.classList.toggle('light-mode');
     const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
     localStorage.setItem('yt_theme', theme);
 });
 
-let reloadTimer;
-document.getElementById('reloadInterval').addEventListener('change', (event) => {
-    const minutes = parseFloat(event.target.value);
-    localStorage.setItem('yt_reload_interval', minutes);
-    if (reloadTimer) clearTimeout(reloadTimer);
-    
-    if (minutes > 0) {
-        reloadTimer = setTimeout(() => location.reload(), minutes * 60 * 1000);
-    }
+let currentQuality = 'tiny'; // Default to 144p
+
+document.getElementById('qualitySelect').addEventListener('change', (e) => {
+    currentQuality = e.target.value;
+    const container = document.getElementById('videoContainer');
+    Array.from(container.children).forEach(wrapper => {
+        if (wrapper.player && typeof wrapper.player.setPlaybackQuality === 'function') {
+            wrapper.player.setPlaybackQuality(currentQuality);
+        }
+    });
 });
 
 function extractVideoId(url) {
@@ -241,7 +265,7 @@ function addVideoToGrid(id, save = true) {
                     }
 
                     if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
-                        event.target.setPlaybackQuality('tiny');
+                        event.target.setPlaybackQuality(currentQuality);
                     }
                     if (event.data === YT.PlayerState.ENDED) {
                         if (!isPlaylist) {
@@ -301,3 +325,18 @@ window.onscroll = () => {
 backToTopBtn.addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
+
+// Keep-alive loop: Fixes issue where muted videos stop in background tabs
+setInterval(() => {
+    if (isGlobalPause) return; // Don't force play if user clicked "Pause All"
+
+    const container = document.getElementById('videoContainer');
+    Array.from(container.children).forEach(wrapper => {
+        if (wrapper.player && typeof wrapper.player.getPlayerState === 'function') {
+            // State 2 means PAUSED. If paused and not globally paused, force play.
+            if (wrapper.player.getPlayerState() === 2) {
+                wrapper.player.playVideo();
+            }
+        }
+    });
+}, 2000); // Check every 2 seconds
