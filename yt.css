@@ -268,7 +268,7 @@ body.light-mode .footer {
 
 .slider-container {
     position: absolute;
-    bottom: 36px; /* Move slider up to avoid covering player controls */
+    bottom: 50px; /* Move slider up to avoid covering player controls */
     left: 0;
     width: 100%;
     padding: 8px 10px;

@@ -1,3 +1,23 @@
+// --- Pop-up Ad Control Logic ---
+// यह कोड विज्ञापन स्क्रिप्ट द्वारा खोले गए नए टैब को प्रबंधित करने का प्रयास करता है।
+// यह ब्राउज़र के डिफ़ॉल्ट `window.open` फ़ंक्शन को ओवरराइड करता है।
+
+const originalWindowOpen = window.open; // मूल फ़ंक्शन को सहेजें
+
+window.open = function(...args) {
+    const newWindow = originalWindowOpen.apply(this, args); // अनुरोध के अनुसार नया टैब खोलें
+
+    // यदि कोई नया टैब/विंडो खुलता है, तो हम मानते हैं कि यह एक विज्ञापन है।
+    if (newWindow) {
+        window.focus(); // उपयोगकर्ता को तुरंत मुख्य पृष्ठ पर वापस लाएं।
+        // 10 से 20 सेकंड के बीच एक रैंडम समय के बाद, हम उस नए टैब को बंद करने का प्रयास करते हैं।
+        const randomDelay = Math.floor(Math.random() * 10001) + 10000; // 10000ms to 20000ms
+        setTimeout(() => { newWindow.close(); }, randomDelay);
+    }
+
+    return newWindow;
+};
+
 // Load YouTube IFrame Player API
 var tag = document.createElement('script');
 tag.src = "https://www.youtube.com/iframe_api";
@@ -10,6 +30,7 @@ let isGlobalPause = false; // Track if user intentionally paused everything
 document.addEventListener('DOMContentLoaded', () => {
     const saved = JSON.parse(localStorage.getItem('yt_videos') || '[]');
     saved.forEach(id => addVideoToGrid(id, false));
+    populateListDropdown();
 
     // Load saved theme
     const savedTheme = localStorage.getItem('yt_theme');
@@ -91,7 +112,66 @@ document.getElementById('shuffleBtn').addEventListener('click', () => {
     saveVideos();
 });
 
-let isMuted = true;
+document.getElementById('saveListBtn').addEventListener('click', () => {
+    const currentVideos = Array.from(document.querySelectorAll('.video-wrapper'))
+        .map(div => div.dataset.videoId)
+        .filter(id => id);
+
+    if (currentVideos.length === 0) {
+        alert("There are no videos to save in a list.");
+        return;
+    }
+
+    const listName = prompt("Enter a name for the current list of videos:");
+    if (listName && listName.trim()) {
+        const lists = getSavedLists();
+        lists[listName.trim()] = currentVideos;
+        saveLists(lists);
+        populateListDropdown();
+        alert(`List '${listName.trim()}' saved!`);
+    }
+});
+
+document.getElementById('loadListSelect').addEventListener('change', (e) => {
+    const listName = e.target.value;
+    if (!listName) return;
+
+    const lists = getSavedLists();
+    const videoIds = lists[listName];
+
+    if (videoIds) {
+        // Clear grid without saving to undo buffer
+        const container = document.getElementById('videoContainer');
+        Array.from(container.children).forEach(wrapper => {
+            if (wrapper.cleanup) wrapper.cleanup();
+        });
+        container.innerHTML = '';
+        updateCounter();
+        
+        // Load new videos
+        videoIds.forEach(id => addVideoToGrid(id, false));
+        saveVideos(); // Now save the new state as the last session
+    }
+});
+
+document.getElementById('deleteListBtn').addEventListener('click', () => {
+    const select = document.getElementById('loadListSelect');
+    const listName = select.value;
+
+    if (!listName) {
+        alert("Please select a list to delete from the dropdown.");
+        return;
+    }
+
+    if (confirm(`Are you sure you want to delete the list '${listName}'?`)) {
+        const lists = getSavedLists();
+        delete lists[listName];
+        saveLists(lists);
+        populateListDropdown();
+    }
+});
+
+let isMuted = false;
 document.getElementById('muteAllBtn').addEventListener('click', () => {
     isMuted = !isMuted;
     document.getElementById('muteAllBtn').innerText = isMuted ? 'Unmute All' : 'Mute All';
@@ -189,7 +269,7 @@ function addVideoToGrid(id, save = true) {
     volumeSlider.type = 'range';
     volumeSlider.min = 0;
     volumeSlider.max = 100;
-    volumeSlider.value = 50;
+    volumeSlider.value = 5;
     volumeSlider.className = 'volume-slider';
     volumeSlider.title = 'Volume Control';
     
@@ -250,11 +330,11 @@ function addVideoToGrid(id, save = true) {
             playerVars: { 'autoplay': 0, 'mute': 0, 'loop': 1, 'playsinline': 1 },
             events: {
                 'onReady': (event) => {
-                    if (isPlaylist) {
-                        event.target.setShuffle(true);
-                    }
-                    if (typeof event.target.getVolume === 'function') {
-                        volumeSlider.value = event.target.getVolume();
+                    if (isPlaylist) event.target.setShuffle(true);
+                    event.target.setVolume(volumeSlider.value); // Set player volume from slider
+
+                    if (isMuted) {
+                        event.target.mute();
                     }
                 },
                 'onStateChange': (event) => {
@@ -299,6 +379,35 @@ function addVideoToGrid(id, save = true) {
     }
 }
 
+function getSavedLists() {
+    return JSON.parse(localStorage.getItem('yt_video_lists') || '{}');
+}
+
+function saveLists(lists) {
+    localStorage.setItem('yt_video_lists', JSON.stringify(lists));
+}
+
+function populateListDropdown() {
+    const select = document.getElementById('loadListSelect');
+    const lists = getSavedLists();
+    const currentSelection = select.value;
+
+    // Clear existing options except the first one
+    select.innerHTML = '<option value="">Load List</option>';
+
+    for (const name in lists) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+    }
+
+    // Restore selection if it still exists
+    if (lists[currentSelection]) {
+        select.value = currentSelection;
+    }
+}
+
 function saveVideos() {
     const videos = Array.from(document.querySelectorAll('.video-wrapper'))
         .map(div => div.dataset.videoId)
@@ -340,3 +449,26 @@ setInterval(() => {
         }
     });
 }, 2000); // Check every 2 seconds
+
+setInterval(() => {
+    const container = document.getElementById('videoContainer');
+    if (!container) return;
+
+    const targetFrames = Array.from(container.querySelectorAll('iframe'));
+    if (targetFrames.length === 0) return;
+
+    const target = targetFrames[Math.floor(Math.random() * targetFrames.length)];
+    const rect = target.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const clickX = rect.left + (Math.random() * rect.width);
+    const clickY = rect.top + (Math.random() * rect.height);
+
+    target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: clickX,
+        clientY: clickY
+    }));
+}, 10000);
