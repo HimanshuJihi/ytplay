@@ -29,7 +29,15 @@ let isGlobalPause = false; // Track if user intentionally paused everything
 // Load saved videos on startup
 document.addEventListener('DOMContentLoaded', () => {
     const saved = JSON.parse(localStorage.getItem('yt_videos') || '[]');
-    saved.forEach(id => addVideoToGrid(id, false));
+    saved.forEach(videoData => {
+        // Handle both old format (string ID) and new format (object)
+        if (typeof videoData === 'string') {
+            // For backward compatibility, treat old data as non-shorts
+            addVideoToGrid({ id: videoData, isShort: false }, false);
+        } else {
+            addVideoToGrid(videoData, false);
+        }
+    });
     populateListDropdown();
 
     // Load saved theme
@@ -40,29 +48,34 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.getElementById('addBtn').addEventListener('click', () => {
-    const input = document.getElementById('videoUrl');
-    let url = input.value.trim();
+    const urlInput = document.getElementById('videoUrl');
+    const countInput = document.getElementById('gridCount');
+    let url = urlInput.value.trim();
+    const count = parseInt(countInput.value, 10) || 1;
     
     if (!url) return;
 
     isGlobalPause = false; // Reset pause state so videos can play
 
-    // Force HTTPS for generic URLs to avoid Mixed Content errors on Netlify
-    if (url.startsWith('http://')) {
-        url = url.replace('http://', 'https://');
+    for (let i = 0; i < count; i++) {
+        let currentUrl = url;
+        // Force HTTPS for generic URLs to avoid Mixed Content errors on Netlify
+        if (currentUrl.startsWith('http://')) {
+            currentUrl = currentUrl.replace('http://', 'https://');
+        }
+
+        const videoInfo = extractVideoInfo(currentUrl);
+        
+        if (videoInfo) {
+            addVideoToGrid(videoInfo);
+        } else if (currentUrl.includes('apnatube.in') || currentUrl.includes('atoplay.com') || currentUrl.includes('facebook.com') || currentUrl.includes('instagram.com')) {
+            addVideoToGrid(currentUrl);
+        } else if (i === 0) { // Show alert only once
+            alert('Invalid URL. Please use YouTube, ApnaTube, Atoplay, Facebook or Instagram links.');
+        }
     }
 
-    const videoId = extractVideoId(url);
-    
-    if (videoId) {
-        addVideoToGrid(videoId);
-        input.value = ''; // Clear input
-    } else if (url.includes('apnatube.in') || url.includes('atoplay.com') || url.includes('facebook.com') || url.includes('instagram.com')) {
-        addVideoToGrid(url);
-        input.value = '';
-    } else {
-        alert('Invalid URL. Please use YouTube, ApnaTube, Atoplay, Facebook or Instagram links.');
-    }
+    urlInput.value = ''; // Clear input after adding
 });
 
 document.getElementById('videoUrl').addEventListener('keyup', (event) => {
@@ -77,7 +90,13 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     const container = document.getElementById('videoContainer');
     
     // Save videos before clearing
-    const currentVideos = Array.from(container.children).map(wrapper => wrapper.dataset.videoId).filter(id => id);
+    const currentVideos = Array.from(container.children).map(wrapper => {
+        return {
+            id: wrapper.dataset.videoId,
+            isShort: wrapper.classList.contains('short-video-wrapper')
+        };
+    }).filter(data => data.id);
+
     if (currentVideos.length > 0) {
         lastDeletedVideos = currentVideos;
         document.getElementById('undoBtn').style.display = 'inline-block';
@@ -92,7 +111,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 });
 
 document.getElementById('undoBtn').addEventListener('click', () => {
-    lastDeletedVideos.forEach(id => addVideoToGrid(id, false));
+    lastDeletedVideos.forEach(videoData => addVideoToGrid(videoData, false));
     saveVideos();
     document.getElementById('undoBtn').style.display = 'none';
     lastDeletedVideos = [];
@@ -114,8 +133,11 @@ document.getElementById('shuffleBtn').addEventListener('click', () => {
 
 document.getElementById('saveListBtn').addEventListener('click', () => {
     const currentVideos = Array.from(document.querySelectorAll('.video-wrapper'))
-        .map(div => div.dataset.videoId)
-        .filter(id => id);
+        .map(div => ({
+            id: div.dataset.videoId,
+            isShort: div.classList.contains('short-video-wrapper')
+        }))
+        .filter(data => data.id);
 
     if (currentVideos.length === 0) {
         alert("There are no videos to save in a list.");
@@ -149,7 +171,7 @@ document.getElementById('loadListSelect').addEventListener('change', (e) => {
         updateCounter();
         
         // Load new videos
-        videoIds.forEach(id => addVideoToGrid(id, false));
+        videoIds.forEach(videoData => addVideoToGrid(videoData, false));
         saveVideos(); // Now save the new state as the last session
     }
 });
@@ -186,13 +208,18 @@ document.getElementById('muteAllBtn').addEventListener('click', () => {
 
 document.getElementById('playAllBtn').addEventListener('click', () => {
     isGlobalPause = false; // Enable auto-resume
+    
+    // Get delay from user input (default to 10 seconds if empty)
+    const delayInput = document.getElementById('playDelay');
+    const delay = (parseInt(delayInput.value) || 10) * 1000;
+
     const container = document.getElementById('videoContainer');
     Array.from(container.children).forEach((wrapper, index) => {
         setTimeout(() => {
             if (wrapper.player && typeof wrapper.player.playVideo === 'function') {
                 wrapper.player.playVideo();
             }
-        }, index * 10000); // 10 second delay between each start
+        }, index * delay); // User defined delay
     });
 });
 
@@ -224,16 +251,41 @@ document.getElementById('qualitySelect').addEventListener('change', (e) => {
     });
 });
 
-function extractVideoId(url) {
-    const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
-    if (listMatch) return listMatch[1];
+document.getElementById('aspectRatioSelect').addEventListener('change', (e) => {
+    const container = document.getElementById('videoContainer');
+    container.classList.remove('ratio-16-9', 'ratio-9-16', 'ratio-1-1');
+    if (e.target.value !== 'auto') {
+        container.classList.add(e.target.value);
+    }
+});
 
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([a-zA-Z0-9_-]{11}).*/;
+function extractVideoInfo(url) {
+    const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+    if (listMatch) return { id: listMatch[1], isShort: false };
+
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([a-zA-Z0-9_-]{11}).*/;
     const match = url.match(regExp);
-    return match ? match[2] : null;
+    if (match) {
+        const isShort = url.includes('/shorts/');
+        return { id: match[2], isShort: isShort };
+    }
+    return null;
 }
 
-function addVideoToGrid(id, save = true) {
+function addVideoToGrid(videoData, save = true) {
+    let id, isShort;
+
+    // Handle different formats for videoData (string for generic URLs, object for YouTube)
+    if (typeof videoData === 'string') {
+        id = videoData;
+        isShort = false;
+    } else if (typeof videoData === 'object' && videoData.id) {
+        id = videoData.id;
+        isShort = videoData.isShort || false;
+    } else {
+        return; // Exit if data is not in a recognized format
+    }
+
     const container = document.getElementById('videoContainer');
     const wrapper = document.createElement('div');
     wrapper.className = 'video-wrapper';
@@ -241,6 +293,10 @@ function addVideoToGrid(id, save = true) {
 
     // Check if it is a generic URL (ApnaTube) or a YouTube ID
     const isGenericUrl = id.includes('apnatube.in') || id.includes('atoplay.com') || id.includes('facebook.com') || id.includes('instagram.com');
+
+    if (isShort) {
+        wrapper.classList.add('short-video-wrapper');
+    }
 
     // Cleanup function to stop timers
     wrapper.cleanup = () => {
@@ -307,8 +363,9 @@ function addVideoToGrid(id, save = true) {
         }
 
         // Convert Atoplay video URLs to embed URLs to fix "refused to connect"
-        if (embedUrl.includes('atoplay.com') && embedUrl.includes('/videos/')) {
-            embedUrl = embedUrl.replace('/videos/', '/embed/');
+        if (embedUrl.includes('atoplay.com')) {
+            const match = embedUrl.match(/atoplay\.com\/videos\/([a-zA-Z0-9_-]+)/);
+            if (match && match[1]) embedUrl = `https://atoplay.com/embed/${match[1]}`;
         }
 
         // Handle ApnaTube or other generic iframes
@@ -327,7 +384,7 @@ function addVideoToGrid(id, save = true) {
         const playerConfig = {
             height: '100%',
             width: '100%',
-            playerVars: { 'autoplay': 0, 'mute': 0, 'loop': 1, 'playsinline': 1 },
+            playerVars: { 'autoplay': 0, 'mute': 0, 'playsinline': 1, 'origin': window.location.origin },
             events: {
                 'onReady': (event) => {
                     if (isPlaylist) event.target.setShuffle(true);
@@ -361,7 +418,6 @@ function addVideoToGrid(id, save = true) {
             playerConfig.playerVars.list = id;
         } else {
             playerConfig.videoId = id;
-            playerConfig.playerVars.playlist = id;
         }
 
         wrapper.player = new YT.Player(playerId, playerConfig);
@@ -410,8 +466,11 @@ function populateListDropdown() {
 
 function saveVideos() {
     const videos = Array.from(document.querySelectorAll('.video-wrapper'))
-        .map(div => div.dataset.videoId)
-        .filter(id => id);
+        .map(div => ({
+            id: div.dataset.videoId,
+            isShort: div.classList.contains('short-video-wrapper')
+        }))
+        .filter(data => data.id);
     localStorage.setItem('yt_videos', JSON.stringify(videos));
 }
 
@@ -434,41 +493,3 @@ window.onscroll = () => {
 backToTopBtn.addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
-
-// Keep-alive loop: Fixes issue where muted videos stop in background tabs
-setInterval(() => {
-    if (isGlobalPause) return; // Don't force play if user clicked "Pause All"
-
-    const container = document.getElementById('videoContainer');
-    Array.from(container.children).forEach(wrapper => {
-        if (wrapper.player && typeof wrapper.player.getPlayerState === 'function') {
-            // State 2 means PAUSED. If paused and not globally paused, force play.
-            if (wrapper.player.getPlayerState() === 2) {
-                wrapper.player.playVideo();
-            }
-        }
-    });
-}, 2000); // Check every 2 seconds
-
-setInterval(() => {
-    const container = document.getElementById('videoContainer');
-    if (!container) return;
-
-    const targetFrames = Array.from(container.querySelectorAll('iframe'));
-    if (targetFrames.length === 0) return;
-
-    const target = targetFrames[Math.floor(Math.random() * targetFrames.length)];
-    const rect = target.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-
-    const clickX = rect.left + (Math.random() * rect.width);
-    const clickY = rect.top + (Math.random() * rect.height);
-
-    target.dispatchEvent(new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: clickX,
-        clientY: clickY
-    }));
-}, 10000);

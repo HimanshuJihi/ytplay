@@ -10,6 +10,7 @@
 <body>
     <div class="controls">
         <input type="text" id="videoUrl" placeholder="Paste YouTube, ApnaTube, Atoplay, FB or Insta URL">
+                <input type="number" id="gridCount" placeholder="Count" min="1" value="1" title="Number of grids to open">
         <button id="addBtn">Play Video</button>
         <button id="clearBtn">Clear All</button>
         <button id="undoBtn">Undo</button>
@@ -18,6 +19,7 @@
         <select id="loadListSelect"><option value="">Load List</option></select>
         <button id="deleteListBtn">Delete List</button>
         <button id="muteAllBtn">Unmute All</button>
+        <input type="number" id="playDelay" placeholder="Delay" value="10" min="0" title="Delay in seconds" style="width: 70px; text-align: center;">
         <button id="playAllBtn">Play All</button>
         <button id="pauseAllBtn">Pause All</button>
         <button id="themeBtn" title="Toggle Theme">🌗</button>

@@ -312,3 +312,12 @@ body.light-mode .footer {
 body.light-mode .footer a {
     color: #555;
 }
+
+.video-wrapper.short-video-wrapper iframe {
+    aspect-ratio: 9 / 16;
+}
+
+/* Global Aspect Ratio Overrides */
+#videoContainer.ratio-16-9 iframe { aspect-ratio: 16 / 9; }
+#videoContainer.ratio-9-16 iframe { aspect-ratio: 9 / 16; }
+#videoContainer.ratio-1-1 iframe { aspect-ratio: 1 / 1; }
